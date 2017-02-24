@@ -7,8 +7,8 @@ $port 	            = 4025;
 $password           = "user";         // Password to Envisalink (the same as to login to Envisalink module webserver, factory default - user)
 $startingCode       = 0;              // Codes are checked with brute force starting from this value till 9999 - useful if you restart the script
 $enterInstallerMode = "1*8";          // Partition number and command to enter installer mode, please check the keystrokes for your pannel
-
-
+$masterCode         = 1234;            // Master Code (used to arm / disarm after 5 tries to avoid keypad lockout) 
+$maxTries           = 6;              // Maximum number of tries before you get keypad lockout.  Set to 0 to bypass.		
 
 $stopTime = 0.0;
 
@@ -33,9 +33,37 @@ function envisalinkLogin ($password) {
 
 function breakCode ($startCode) {
    global $enterInstallerMode;
+   global $masterCode;
    global $stopTime;
+   global $maxTries;
    for ($code = $startCode;$code<10000;$code++) {
+	if (($maxTries >0) && (($code % $maxTries) == 0))
+	{
+		echo "#\n";
+		writeDSC("070#"); // Make sure we are out of any menus
+		$lines = readData();
+		echo "Arming with master code\n";
+		writeDSC("0711".sprintf("%04d",$masterCode)); 
+		$lines = readData();
+		foreach ($lines as $line) {
+			$res = readDSC($line);
+			echo ("  Return: ".$res['code'].": ".$res['data']." ".$res['msg']."\n");
+		}
+		sleep(2); // Avoid Keybus Transmit Buffer Overrun
+
+		echo "DisArming with master code\n";
+		writeDSC("0401".sprintf("%04d",$masterCode));
+		$lines = readData();
+		foreach ($lines as $line) {
+			$res = readDSC($line);
+			echo ("  Return: ".$res['code'].": ".$res['data']." ".$res['msg']."\n");
+		}
+		sleep(2); // Avoid Keybus Transmit Buffer Overrun
+	}
 	echo ("Testing code: ".sprintf("%04d",$code)."\n");
+	writeDSC("070#"); // make sure that we are exited out of any menus
+	$lines = readData();
+	sleep(2); // Avoid Keybus Transmit Buffer Overrun
 	writeDSC("071".$enterInstallerMode.sprintf("%04d",$code));
         $lastCode = $code;
         $loop = true;
@@ -64,7 +92,7 @@ function breakCode ($startCode) {
                     $loop = false;
 	        elseif ($res['code']==502) {
                     $code--;               // Error, repeate check for this code.
-                    sleep(1);
+                    sleep(5); // Avoid Keybus Transmit Buffer Overrun
                     $loop = false;
                 }
 	        echo("  ".$res['msg']."\n");
